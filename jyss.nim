@@ -22,29 +22,24 @@ type
     a: seq[ExprC]
     b: ExprC
 
-# Equality
-proc `==`*(a, b: NumC): bool = a.n == b.n
-proc `==`*(a, b: StrC | IdC): bool = a.s == b.s
-proc `==`*(a, b: IfC): bool = a.c != b.c #and a.t == b.t and a.f == b.f
+# Stringify overrides
+method `$`*(e: ExprC): string {.base.} = quit "must override `$` for ExprC subclasses"
+method `$`*(e: NumC): string = "NumC(" & $e.n & ")"
+method `$`*(e: StrC): string = "StrC(" & $e.s & ")"
+method `$`*(e: IdC): string = "IdC(" & $e.s & ")"
+method `$`*(e: IfC): string = "IfC(" & $e.c & ", " & $e.t & ", " & $e.f & ")"
+# Equality uses stringify
+method `==`*(a, b: NumC | StrC | IdC | IfC | LamC | AppC): bool = $a == $b
 
 # Top-level functions
 
 
-
 # Helper functions
-proc greaterThan32(x: int): bool = x > 32
 
-# var testObj1 = IfC(c: IdC(s: "true"), t: StrC(s: "foo"), f: StrC(s: "bar"))
-# var testObj2 = IfC(c: IdC(s: "true"), t: StrC(s: "foo"), f: StrC(s: "bar"))
-# var testVar = NumC(n: 42)
 
 # Test cases
-proc `==`*(x: ExprC, y: ExprC): bool = %x == %y
 when isMainModule:
-  doAssert greaterThan32(42) == true
-  doAssert 7 > 4
-  doAssert "hello world" == "hello world"
-  # equality and inequality
+  # equality and inequality of AST types
   doAssert NumC(n: 42) == NumC(n: 42)
   doAssert NumC(n: 42) != NumC(n: 7)
   doAssert StrC(s: "foo") == StrC(s: "foo")
@@ -52,3 +47,4 @@ when isMainModule:
   doAssert IdC(s: "x") == IdC(s: "x")
   doAssert IdC(s: "x") != IdC(s: "y")
   doAssert IfC(c: IdC(s: "true"), t: StrC(s: "foo"), f: StrC(s: "bar")) == IfC(c: IdC(s: "true"), t: StrC(s: "foo"), f: StrC(s: "bar"))
+  doAssert IfC(c: IdC(s: "true"), t: StrC(s: "foo"), f: StrC(s: "bar")) != IfC(c: StrC(s: "true"), t: IdC(s: "foo"), f: IdC(s: "bar"))
