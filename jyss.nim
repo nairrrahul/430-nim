@@ -22,20 +22,64 @@ type
     a: seq[ExprC]
     b: ExprC
 
+type
+  Value = ref object of RootObj
+type
+  NumV = ref object of Value
+    n: int
+  ClosV = ref object of Value
+    a: seq[IdC]
+    b: ExprC
+    e: seq[Binding]
+  PrimopV = ref object of Value
+    o: string
+  BoolV = ref object of Value
+    b: bool
+  StrV = ref object of Value
+    s: string
+  Binding = ref object
+    n: string
+    v: Value
+
 # Stringify overrides
 method `$`*(e: ExprC): string {.base.} = quit "must override `$` for ExprC subclasses"
 method `$`*(e: NumC): string = "NumC(" & $e.n & ")"
 method `$`*(e: StrC): string = "StrC(" & $e.s & ")"
 method `$`*(e: IdC): string = "IdC(" & $e.s & ")"
 method `$`*(e: IfC): string = "IfC(" & $e.c & ", " & $e.t & ", " & $e.f & ")"
+method `$`*(e: AppC): string = "AppC(" & $e.a & ", " & $e.b & ")"
+method `$`*(e: LamC): string = "LamC(" & $e.a & ", " & $e.b & ")"
+method `$`*(e: Value): string {.base.} = quit "must override `$` for Value subclasses"
+method `$`*(e: NumV): string = "NumV(" & $e.n & ")"
+method `$`*(e: PrimopV): string = "PrimopV(" & $e.o & ")"
+method `$`*(e: StrV): string = "StrV(" & $e.s & ")"
+method `$`*(e: BoolV): string = "BoolV(" & $e.b & ")"
+method `$`*(e: Binding): string = "Binding(" & $e.n & ", " & $e.v & ")"
+method `$`*(e: ClosV): string = "ClosV(" & $e.a & ", " & $e.b & ", " & $e.e & ")"
 # Equality uses stringify
 method `==`*(a, b: NumC | StrC | IdC | IfC | LamC | AppC): bool = $a == $b
+method `==`*(a, b: NumV | ClosV | PrimopV | BoolV | StrV): bool = $a == $b
 
 # Top-level functions
+proc serialize(v: Value): string = 
+  if v of StrV:
+    return StrV(v).s
+  elif v of NumV:
+    return $(NumV(v).n)
+  elif v of BoolV:
+    return $(BoolV(v).b)
+  else:
+    return "temp"
 
+proc interp(e: ExprC, env: seq[Binding]): Value =
+  if e of NumC:
+    return NumV(n: NumC(e).n)
+  elif e of StrC:
+    return StrV(s: StrC(e).s)
+  else:
+    return NumV(n: 1)
 
 # Helper functions
-
 
 # Test cases
 when isMainModule:
@@ -48,3 +92,5 @@ when isMainModule:
   doAssert IdC(s: "x") != IdC(s: "y")
   doAssert IfC(c: IdC(s: "true"), t: StrC(s: "foo"), f: StrC(s: "bar")) == IfC(c: IdC(s: "true"), t: StrC(s: "foo"), f: StrC(s: "bar"))
   doAssert IfC(c: IdC(s: "true"), t: StrC(s: "foo"), f: StrC(s: "bar")) != IfC(c: StrC(s: "true"), t: IdC(s: "foo"), f: IdC(s: "bar"))
+  doAssert NumC(n: 3) is NumC
+  doAssert serialize(interp(NumC(n: 3), @[])) == "3"
