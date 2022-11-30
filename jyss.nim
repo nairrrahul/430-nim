@@ -68,8 +68,21 @@ proc serialize(v: Value): string =
     return $(NumV(v).n)
   elif v of BoolV:
     return $(BoolV(v).b)
+  elif v of PrimopV:
+    return "#<primop>"
+  elif v of ClosV:
+    return "#<procedure>"
   else:
-    return "temp"
+    raise newException(ValueError, "Invalid Input to serialize")
+
+proc lookup(what: string, env: seq[Binding]): Value =
+  if len(env) == 0:
+    raise newException(ValueError, "No Binding for Variable")
+  else:
+    if what == env[0].n:
+      return env[0].v
+    else:
+      return lookup(what, env[1 .. len(env)-1])
 
 proc interp(e: ExprC, env: seq[Binding]): Value =
   if e of NumC:
@@ -82,7 +95,7 @@ proc interp(e: ExprC, env: seq[Binding]): Value =
     elif IdC(e).s == "false":
       return BoolV(b: false)
     else:
-      return NumV(n: 1)
+      return lookup(IdC(e).s, env)
   elif e of IfC:
     var cond_res: Value = interp(IfC(e).c, env)
     if cond_res of BoolV:
@@ -93,9 +106,10 @@ proc interp(e: ExprC, env: seq[Binding]): Value =
     else:
       raise newException(ValueError, "invalid type")
   else:
-    return NumV(n: 1)
+    return NumV(n: -1)
 
 # Helper functions
+## lookup above interp due to undeclared identifier errors
 
 # Test cases
 when isMainModule:
@@ -111,3 +125,5 @@ when isMainModule:
   doAssert NumC(n: 3) is NumC
   doAssert serialize(interp(NumC(n: 3), @[])) == "3"
   doAssert serialize(interp(IfC(c: IdC(s: "true"), t: StrC(s: "foo"), f: StrC(s: "bar")), @[])) == "foo"
+  doAssert serialize(lookup("x", @[Binding(n: "y", v: NumV(n: 5)), Binding(n: "x", v: NumV(n: 34)), 
+  Binding(n: "z", v: StrV(s: "5"))])) == "34"
