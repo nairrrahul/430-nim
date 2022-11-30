@@ -76,6 +76,22 @@ proc interp(e: ExprC, env: seq[Binding]): Value =
     return NumV(n: NumC(e).n)
   elif e of StrC:
     return StrV(s: StrC(e).s)
+  elif e of IdC:
+    if IdC(e).s == "true":
+      return BoolV(b: true)
+    elif IdC(e).s == "false":
+      return BoolV(b: false)
+    else:
+      return NumV(n: 1)
+  elif e of IfC:
+    var cond_res: Value = interp(IfC(e).c, env)
+    if cond_res of BoolV:
+      if BoolV(cond_res).b == true:
+        return interp(IfC(e).t, env)
+      else:
+        return interp(IfC(e).f, env)
+    else:
+      raise newException(ValueError, "invalid type")
   else:
     return NumV(n: 1)
 
@@ -94,3 +110,4 @@ when isMainModule:
   doAssert IfC(c: IdC(s: "true"), t: StrC(s: "foo"), f: StrC(s: "bar")) != IfC(c: StrC(s: "true"), t: IdC(s: "foo"), f: IdC(s: "bar"))
   doAssert NumC(n: 3) is NumC
   doAssert serialize(interp(NumC(n: 3), @[])) == "3"
+  doAssert serialize(interp(IfC(c: IdC(s: "true"), t: StrC(s: "foo"), f: StrC(s: "bar")), @[])) == "foo"
