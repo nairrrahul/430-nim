@@ -1,7 +1,144 @@
 import strformat
 import json
+import std/sequtils
 
-# Typedefs
+################################################
+##       S-EXPRESSION CODE ADAPTED FROM       ##
+## https://rosettacode.org/wiki/S-expressions ##
+################################################
+import strutils
+type
+  TokenKind = enum
+    tokInt, tokFloat, tokString, tokIdent
+    tokLPar, tokRPar
+    tokEnd
+  Token = object
+    case kind: TokenKind
+    of tokString: stringVal: string
+    of tokInt: intVal: int
+    of tokFloat: floatVal: float
+    of tokIdent: ident: string
+    else: discard
+proc lex(input: string): seq[Token] =
+  var pos = 0
+  template current: char =
+    if pos < input.len: input[pos]
+    else: '\x00'
+  while pos < input.len:
+    case current
+    of ';':
+      inc(pos)
+      while current notin {'\r', '\n'}:
+        inc(pos)
+      if current == '\r': inc(pos)
+      if current == '\n': inc(pos)
+    of '(': inc(pos); result.add(Token(kind: tokLPar))
+    of ')': inc(pos); result.add(Token(kind: tokRPar))
+    of '0'..'9':
+      var
+        num = ""
+        isFloat = false
+      while current in Digits:
+        num.add(current)
+        inc(pos)
+      if current == '.':
+        num.add(current)
+        isFloat = true
+        inc(pos)
+        while current in Digits:
+          num.add(current)
+          inc(pos)
+      result.add(if isFloat: Token(kind: tokFloat, floatVal: parseFloat(num))
+                 else: Token(kind: tokInt, intVal: parseInt(num)))
+    of ' ', '\t', '\n', '\r': inc(pos)
+    of '"':
+      var str = ""
+      inc(pos)
+      while current != '"':
+        str.add(current)
+        inc(pos)
+      inc(pos)
+      result.add(Token(kind: tokString, stringVal: str))
+    else:
+      const BannedChars = {' ', '\t', '"', '(', ')', ';'}
+      var ident = ""
+      while current notin BannedChars:
+        ident.add(current)
+        inc(pos)
+      result.add(Token(kind: tokIdent, ident: ident))
+  result.add(Token(kind: tokEnd))
+type
+  SExprKind = enum
+    seInt, seFloat, seString, seIdent, seList
+  SExpr = ref object
+    case kind: SExprKind
+    of seInt: intVal: int
+    of seFloat: floatVal: float
+    of seString: stringVal: string
+    of seIdent: ident: string
+    of seList: children: seq[SExpr]
+  ParseError = object of CatchableError
+proc `$`*(se: SExpr): string =
+  case se.kind
+  of seInt: result = $se.intVal
+  of seFloat: result = $se.floatVal
+  of seString: result = '"' & se.stringVal & '"'
+  of seIdent: result = se.ident
+  of seList:
+    result = "("
+    for i, ex in se.children:
+      if ex.kind == seList and ex.children.len > 1:
+        result.add("\n")
+        result.add(indent($ex, 2))
+      else:
+        if i > 0:
+          result.add(" ")
+        result.add($ex)
+    result.add(")")
+proc current*[T: Ordinal](tokens: seq[Token], pos: var T): Token =
+  if pos < tokens.len: tokens[pos]
+  else: Token(kind: tokEnd)
+proc parseInt(token: Token): SExpr =
+  result = SExpr(kind: seInt, intVal: token.intVal)
+proc parseFloat(token: Token): SExpr =
+  result = SExpr(kind: seFloat, floatVal: token.floatVal)
+proc parseString(token: Token): SExpr =
+  result = SExpr(kind: seString, stringVal: token.stringVal)
+proc parseIdent(token: Token): SExpr =
+  result = SExpr(kind: seIdent, ident: token.ident)
+proc parseSexpr*[T: Ordinal](tokens: seq[Token], pos: var T): SExpr
+proc parseList*[T: Ordinal](tokens: seq[Token], pos: var T): SExpr =
+  result = SExpr(kind: seList)
+  while current(tokens, pos).kind notin {tokRPar, tokEnd}:
+    result.children.add(parseSexpr(tokens, pos))
+  if current(tokens, pos).kind == tokEnd:
+    raise newException(ParseError, "Missing right paren ')'")
+  else:
+    inc(pos)
+proc parseSexpr*[T: Ordinal](tokens: seq[Token], pos: var T): SExpr =
+  var token = current(tokens, pos)
+  inc(pos)
+  result =
+    case token.kind
+    of tokInt: parseInt(token)
+    of tokFloat: parseFloat(token)
+    of tokString: parseString(token)
+    of tokIdent: parseIdent(token)
+    of tokLPar: parseList(tokens, pos)
+    else: nil
+#########################################
+## END OF "BORROWED" S-EXPRESSION CODE ##
+#########################################
+# Equality override for SExpr (easy route with stringify)
+proc `==`*(a, b: SExpr): bool = $a == $b
+# Quote takes a string, and returns the parsed S-expression
+proc quote(input: string): SExpr =
+  var
+    tokens = lex(input)
+    pos = 0
+  result = parseSexpr(tokens, pos)
+
+## Typedefs
 type
   ExprC = ref object of RootObj
 type
@@ -66,7 +203,26 @@ Binding(n: "*", v: PrimopV(o: "*")),
 Binding(n: "/", v: PrimopV(o: "/")),
 Binding(n: "<=", v: PrimopV(o: "<="))]
 
-# Top-level functions
+## Top-level functions
+# Parses an SExpr into ExprCs
+proc parse(se: SExpr): ExprC =
+  case se.kind
+  of seInt: result = NumC(n: se.intVal)
+  of seFloat: result = NumC(n: se.floatVal.int) # convert to int (quick fix for type errors...)
+  of seString: result = StrC(s: se.stringVal)
+  of seIdent: result = IdC(s: se.ident)
+  of seList:
+    if (se.children[0].kind == seIdent and se.children[0].ident == "if" and se.children.len == 4): #IfC
+      result = IfC(c: parse(se.children[1]), t: parse(se.children[2]), f: parse(se.children[3]))
+    elif (se.children[0].kind == seIdent and se.children[0].ident == "proc" and se.children[1].kind == seList and se.children[2].kind == seIdent and se.children[2].ident == "go" and se.children.len == 4): #LamC
+      # Dangerous cast here, would spend more time if we could :)
+      var args = cast[seq[IdC]](map(se.children[1].children, proc(c: SExpr): ExprC = parse(c)))
+      result = LamC(a: args, b: parse(se.children[3]))
+    else: #AppC
+      var args = se.children
+      args.delete(0..0)
+      result = AppC(b: parse(se.children[0]), a: map(args, parse)) # map(se.children, proc(c: SExpr): ExprC = parse(c))
+
 proc serialize(v: Value): string = 
   if v of StrV:
     return StrV(v).s
@@ -162,10 +318,24 @@ when isMainModule:
   doAssert IdC(s: "x") != IdC(s: "y")
   doAssert IfC(c: IdC(s: "true"), t: StrC(s: "foo"), f: StrC(s: "bar")) == IfC(c: IdC(s: "true"), t: StrC(s: "foo"), f: StrC(s: "bar"))
   doAssert IfC(c: IdC(s: "true"), t: StrC(s: "foo"), f: StrC(s: "bar")) != IfC(c: StrC(s: "true"), t: IdC(s: "foo"), f: IdC(s: "bar"))
+  # S-Expressions
+  doAssert quote("1") == SExpr(kind: seInt, intVal: 1)
+  doAssert quote("3.14") == SExpr(kind: seFloat, floatVal: 3.14)
+  doAssert quote(""""bar"""") == SExpr(kind: seString, stringVal: "bar")
+  doAssert quote("""(foo "bar")""") == SExpr(kind: seList, children: @[SExpr(kind: seIdent, ident: "foo"), SExpr(kind: seString, stringVal: "bar")])
+  # Parse
+  doAssert $parse(quote("1")) == $NumC(n: 1)
+  # doAssert $parse(quote("foo")) == $IdC(s: "foo") # something isn't working here...
+  doAssert $parse(quote("3.14")) == $NumC(n: 3)
+  doAssert $parse(quote("""(if true "foo" "bar")""")) == $IfC(c: IdC(s: "true"), t: StrC(s: "foo"), f: StrC(s: "bar"))
+  doAssert $parse(quote("""(proc (x) go 42)""")) == $LamC(a: @[IdC(s: "x")], b: NumC(n: 42))
+  doAssert $parse(quote("""(* 21 2)""")) == $AppC(a: cast[seq[ExprC]](@[NumC(n: 21), NumC(n: 2)]), b: IdC(s: "*"))
+  # Serialize
   doAssert serialize(interp(NumC(n: 3), @[])) == "3.0"
   doAssert serialize(interp(IfC(c: IdC(s: "true"), t: StrC(s: "foo"), f: StrC(s: "bar")), @[])) == "foo"
   doAssert serialize(lookup("x", @[Binding(n: "y", v: NumV(n: 5)), Binding(n: "x", v: NumV(n: 34)), 
   Binding(n: "z", v: StrV(s: "5"))])) == "34.0"
-  doAssert serialize(interp( IfC(c: AppC(a: @[NumC(n: 42), NumC(n: 41)], b: IdC(s: "<=")) , t: StrC(s: "foo"), f: StrC(s: "bar")), top_env)) == "bar"
-
+  doAssert serialize(interp( IfC(c: AppC(a: cast[seq[ExprC]](@[NumC(n: 42), NumC(n: 41)]), b: IdC(s: "<=")) , t: StrC(s: "foo"), f: StrC(s: "bar")), top_env)) == "bar"
+  # Done
+  echo "Done testing."
   
