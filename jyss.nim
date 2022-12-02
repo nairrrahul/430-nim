@@ -129,9 +129,11 @@ proc parseSexpr*[T: Ordinal](tokens: seq[Token], pos: var T): SExpr =
 #########################################
 ## END OF "BORROWED" S-EXPRESSION CODE ##
 #########################################
+
 # Equality override for SExpr (easy route with stringify)
 proc `==`*(a, b: SExpr): bool = $a == $b
-# Quote takes a string, and returns the parsed S-expression
+
+# Takes a string, and returns the parsed S-expression
 proc quote(input: string): SExpr =
   var
     tokens = lex(input)
@@ -139,6 +141,8 @@ proc quote(input: string): SExpr =
   result = parseSexpr(tokens, pos)
 
 ## Typedefs
+
+# ExprC = NumC | StrC | IdC | IfC | LamC | AppC
 type
   ExprC = ref object of RootObj
 type
@@ -159,6 +163,7 @@ type
     a: seq[ExprC]
     b: ExprC
 
+# Value = NumV | ClosV | PrimopV | BoolV | StrV, and Binding (for ClosV environments)
 type
   Value = ref object of RootObj
 type
@@ -193,17 +198,20 @@ method `$`*(e: StrV): string = "StrV(" & $e.s & ")"
 method `$`*(e: BoolV): string = "BoolV(" & $e.b & ")"
 method `$`*(e: Binding): string = "Binding(" & $e.n & ", " & $e.v & ")"
 method `$`*(e: ClosV): string = "ClosV(" & $e.a & ", " & $e.b & ", " & $e.e & ")"
-# Equality uses stringify
+
+# Equality overrides to use stringify
 method `==`*(a, b: NumC | StrC | IdC | IfC | LamC | AppC): bool = $a == $b
 method `==`*(a, b: NumV | ClosV | PrimopV | BoolV | StrV): bool = $a == $b
 
+# Declasre the top env with primitive operator bindings
 var top_env: seq[Binding] = @[Binding(n: "+", v: PrimopV(o: "+")), 
-Binding(n: "-", v: PrimopV(o: "-")), 
-Binding(n: "*", v: PrimopV(o: "*")), 
-Binding(n: "/", v: PrimopV(o: "/")),
-Binding(n: "<=", v: PrimopV(o: "<="))]
+                              Binding(n: "-", v: PrimopV(o: "-")),
+                              Binding(n: "*", v: PrimopV(o: "*")),
+                              Binding(n: "/", v: PrimopV(o: "/")),
+                              Binding(n: "<=", v: PrimopV(o: "<="))]
 
 ## Top-level functions
+
 # Parses an SExpr into ExprCs
 proc parse(se: SExpr): ExprC =
   case se.kind
@@ -223,6 +231,7 @@ proc parse(se: SExpr): ExprC =
       args.delete(0..0)
       result = AppC(b: parse(se.children[0]), a: map(args, parse)) # map(se.children, proc(c: SExpr): ExprC = parse(c))
 
+# Serializes Value(s) into printable strings
 proc serialize(v: Value): string = 
   if v of StrV:
     return StrV(v).s
@@ -237,6 +246,7 @@ proc serialize(v: Value): string =
   else:
     raise newException(ValueError, "Invalid Input to serialize")
 
+# Given a string (id), returns the value stored in an environment
 proc lookup(what: string, env: seq[Binding]): Value =
   if len(env) == 0:
     raise newException(ValueError, "No Binding for Variable")
@@ -246,6 +256,7 @@ proc lookup(what: string, env: seq[Binding]): Value =
     else:
       return lookup(what, env[1 .. len(env)-1])
 
+# Based on the operator and its two input values, evaluates the output value
 proc primop_eval(op: string, a1: Value, a2: Value): Value = 
   if a1 of NumV and a2 of NumV:
     var arg1: float = NumV(a1).n
@@ -269,6 +280,7 @@ proc primop_eval(op: string, a1: Value, a2: Value): Value =
   else:
     raise newException(ValueError, "Invalid Inputs to Arithmetic Expresison")
 
+# Interprets an ExprC given an env
 proc interp(e: ExprC, env: seq[Binding]): Value =
   if e of NumC:
     return NumV(n: float(NumC(e).n))
@@ -304,8 +316,8 @@ proc interp(e: ExprC, env: seq[Binding]): Value =
   else:
     return NumV(n: -1)
 
-# Helper functions
-## lookup above interp due to undeclared identifier errors
+# Top-interp - a full JYSS.Nim program!
+proc topInterp(input: string): string = serialize(interp(parse(quote(input)), top_env))
 
 # Test cases
 when isMainModule:
@@ -332,9 +344,10 @@ when isMainModule:
   # Serialize & Interp
   doAssert serialize(interp(NumC(n: 3), @[])) == "3.0"
   doAssert serialize(interp(IfC(c: IdC(s: "true"), t: StrC(s: "foo"), f: StrC(s: "bar")), @[])) == "foo"
-  doAssert serialize(lookup("x", @[Binding(n: "y", v: NumV(n: 5)), Binding(n: "x", v: NumV(n: 34)), 
-  Binding(n: "z", v: StrV(s: "5"))])) == "34.0"
-  doAssert serialize(interp( IfC(c: AppC(a: cast[seq[ExprC]](@[NumC(n: 42), NumC(n: 41)]), b: IdC(s: "<=")) , t: StrC(s: "foo"), f: StrC(s: "bar")), top_env)) == "bar"
+  doAssert serialize(lookup("x", @[Binding(n: "y", v: NumV(n: 5)), Binding(n: "x", v: NumV(n: 34)), Binding(n: "z", v: StrV(s: "5"))])) == "34.0"
+  doAssert serialize(interp(IfC(c: AppC(a: cast[seq[ExprC]](@[NumC(n: 42), NumC(n: 41)]), b: IdC(s: "<=")), t: StrC(s: "foo"), f: StrC(s: "bar")), top_env)) == "bar"
+  # A full JYSS.Nim program :)
+  doAssert topInterp("(* 2 21)") == "42.0"
+  doAssert topInterp("(if true 7 3)") == "7.0"
   # Done
   echo "Done testing."
-  
