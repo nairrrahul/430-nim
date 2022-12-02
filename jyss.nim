@@ -325,12 +325,11 @@ when isMainModule:
   doAssert quote("""(foo "bar")""") == SExpr(kind: seList, children: @[SExpr(kind: seIdent, ident: "foo"), SExpr(kind: seString, stringVal: "bar")])
   # Parse
   doAssert $parse(quote("1")) == $NumC(n: 1)
-  # doAssert $parse(quote("foo")) == $IdC(s: "foo") # something isn't working here...
   doAssert $parse(quote("3.14")) == $NumC(n: 3)
   doAssert $parse(quote("""(if true "foo" "bar")""")) == $IfC(c: IdC(s: "true"), t: StrC(s: "foo"), f: StrC(s: "bar"))
   doAssert $parse(quote("""(proc (x) go 42)""")) == $LamC(a: @[IdC(s: "x")], b: NumC(n: 42))
   doAssert $parse(quote("""(* 21 2)""")) == $AppC(a: cast[seq[ExprC]](@[NumC(n: 21), NumC(n: 2)]), b: IdC(s: "*"))
-  # Serialize
+  # Serialize & Interp
   doAssert serialize(interp(NumC(n: 3), @[])) == "3.0"
   doAssert serialize(interp(IfC(c: IdC(s: "true"), t: StrC(s: "foo"), f: StrC(s: "bar")), @[])) == "foo"
   doAssert serialize(lookup("x", @[Binding(n: "y", v: NumV(n: 5)), Binding(n: "x", v: NumV(n: 34)), 
